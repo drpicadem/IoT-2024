@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kvalitet Zraka</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f8ff; 
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background-color: #4CAF50; 
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+    .alert {
+      text-align: center;
+      font-weight: bold;
+      padding: 15px;
+      display: none; 
+    }
+    .alert-high-temp {
+      background-color: #ff4d4d; /* Crvena za visoku temperaturu */
+      color: white;
+    }
+    .alert-high-co2 {
+      background-color: #ffc107; /* Žuta za visoku CO2 koncentraciju */
+      color: black;
+    }
+    main {
+      display: flex;
+      justify-content: center;
+      margin-top: 30px;
+      padding: 0 20px;
+    }
+    .sensor-data {
+      background-color: white;
+      padding: 20px;
+      margin: 10px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      width: 250px;
+      text-align: center;
+      background-color: #f7f7f7; 
+    }
+    .charts {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 30px;
+      padding: 0 20px;
+    }
+    .chart-container {
+      width: 48%; 
+      background-color: #ffffff; 
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    canvas {
+      width: 100%;
+      height: 400px;
+    }
+    footer {
+      background-color: #333;
+      color: white;
+      text-align: center;
+      padding: 10px;
+      position: fixed;
+      width: 100%;
+      bottom: 0;
+    }
+    
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Kvalitet Zraka</h1>
+    <p>Podaci sa senzora (NodeMCU + Firebase)</p>
+  </header>
+
+  <!-- Alert za visoku temperaturu -->
+  <div id="alertTemp" class="alert alert-high-temp">Temperatura je izuzetno visoka!</div>
+  <!-- Alert za loš kvalitet zraka -->
+  <div id="alertCo2" class="alert alert-high-co2">Kvalitet zraka je loš - CO2 koncentracija visoka!</div>
+
+  <main>
+    <div class="sensor-data">
+      <h2>Temperatura</h2>
+      <p id="temperature">Učitavanje...</p>
+    </div>
+
+    <div class="sensor-data">
+      <h2>CO2</h2>
+      <p id="co2">Učitavanje...</p>
+    </div>
+  </main>
+
+  <div class="charts">
+    <div class="chart-container">
+      <h2>Graf Temperature</h2>
+      <canvas id="temperatureChart"></canvas>
+      
+    </div>
+
+    <div class="chart-container">
+      <h2>Graf CO2</h2>
+      <canvas id="co2Chart"></canvas>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+    import { getDatabase, ref, onValue,update } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDiV5eOacEUuLFG5S4GA6kl0VkaWvrC3YM",
+      authDomain: "iot2024-7ae41.firebaseapp.com",
+      databaseURL: "https://iot2024-7ae41-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "iot2024-7ae41",
+      storageBucket: "iot2024-7ae41.firebasestorage.app",
+      messagingSenderId: "846479793015",
+      appId: "1:846479793015:web:75ae270e388a55c6425f72"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+
+    const temperatureRef = ref(database, "sensor/temperature");
+    const co2Ref = ref(database, "sensor/co2");
+
+    const tempCtx = document.getElementById('temperatureChart').getContext('2d');
+    const co2Ctx = document.getElementById('co2Chart').getContext('2d');
+    
+
+    let timeData = [];
+    let temperatureData = [];
+    let co2Data = [];
+
+    const temperatureChart = new Chart(tempCtx, {
+      type: 'line',
+      data: {
+        labels: timeData,
+        datasets: [{
+          label: 'Temperatura (°C)',
+          data: temperatureData,
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          borderWidth: 2,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+
+    const co2Chart = new Chart(co2Ctx, {
+      type: 'line',
+      data: {
+        labels: timeData,
+        datasets: [{
+          label: 'CO2 (ppm)',
+          data: co2Data,
+          borderColor: 'rgba(54, 162, 235, 1)',
+          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          borderWidth: 2,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+
+    onValue(temperatureRef, (snapshot) => {
+      const temperature = snapshot.val();
+      if (temperature !== null) {
+        document.getElementById("temperature").innerText = temperature + " °C";
+        if (temperature > 30) {
+          document.getElementById("alertTemp").style.display = "block";
+        } else {
+          document.getElementById("alertTemp").style.display = "none";
+        }
+        updateChart(temperature, temperatureData, temperatureChart);
+      }
+    });
+
+    onValue(co2Ref, (snapshot) => {
+      const co2 = snapshot.val();
+      if (co2 !== null) {
+        document.getElementById("co2").innerText = co2 + " ppm";
+        if (co2 > 200) {
+          document.getElementById("alertCo2").style.display = "block";
+        } else {
+          document.getElementById("alertCo2").style.display = "none";
+        }
+        updateChart(co2, co2Data, co2Chart);
+      }
+    });
+
+    
+    function updateChart(value, data, chart) {
+      if (timeData.length >= 10) {
+        timeData.shift();
+        data.shift();
+      }
+      timeData.push(new Date().toLocaleTimeString());
+      data.push(value);
+      chart.update();
+    }
+    
+  </script>
+</body>
+</html>
